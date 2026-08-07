@@ -252,6 +252,7 @@ import {
   getAuth, onAuthStateChanged, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCxcS6Fpq0qiiQAlN6h19NW71BzL-FDfwo",
@@ -266,7 +267,12 @@ const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
 const auth = getAuth(fbApp);
 
-const CHUNK_SIZE = 750000; // base64 belgilar soni, Firestore 1MB/doc limitidan xavfsiz pastda
+// ---------- Supabase: faqat fayllarni saqlash uchun ombor (storage) ----------
+const SUPABASE_URL = "https://mujoriozaxjojrgkkars.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_9ELy6fbPUbOiqtpFLkDQSw_FlGN_ohA";
+const SUPABASE_BUCKET = "sites"; // Supabase Dashboard > Storage'da shu nomda PUBLIC bucket yaratilgan bo'lishi shart
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const DOMAIN = "domen.uz";
 const LOGO_SVG = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
   <circle cx="32" cy="32" r="29" fill="none" stroke="#3fb950" stroke-width="3"/>
@@ -314,19 +320,6 @@ function mimeOf(name){
     woff:"font/woff", woff2:"font/woff2", txt:"text/plain"
   };
   return map[ext] || "application/octet-stream";
-}
-function readAsBase64(file){
-  return new Promise((res, rej)=>{
-    const r = new FileReader();
-    r.onload = ()=> res(r.result.split(",")[1] || "");
-    r.onerror = ()=> rej(new Error("Faylni o'qib bo'lmadi"));
-    r.readAsDataURL(file);
-  });
-}
-function chunkStr(str, size){
-  const out = [];
-  for(let i=0;i<str.length;i+=size) out.push(str.slice(i,i+size));
-  return out.length ? out : [""];
 }
 function authErrMsg(code){
   const map = {
@@ -397,7 +390,7 @@ async function entriesFromDataTransfer(dt){
   return files;
 }
 
-// ---------- Firestore'ga yozish ----------
+// ---------- Firestore'ga yozish (faqat metama'lumot) ----------
 async function ensureSiteDoc(sid, username, project, ownerUid, alias){
   await setDoc(doc(db,"sites",sid), {
     username: slugify(username),
@@ -409,8 +402,6 @@ async function ensureSiteDoc(sid, username, project, ownerUid, alias){
 }
 
 // ---------- Ixtiyoriy erkin alias (domen.uz/xoxlagan-nom) ----------
-// "aliases" nomli alohida to'plamda saqlanadi: hujjat id-si = alias slug,
-// qiymati esa qaysi sайtga (siteId) ishora qilishini bildiradi.
 async function claimAlias(aliasRaw, sid, username, project){
   const aSlug = slugify(aliasRaw);
   if(!aSlug) return null;
@@ -427,45 +418,37 @@ async function claimAlias(aliasRaw, sid, username, project){
   });
   return aSlug;
 }
-async function releaseAlias(aliasRaw){
-  const aSlug = slugify(aliasRaw);
-  if(!aSlug) return;
-  try{ await deleteDoc(doc(db,"aliases",aSlug)); }catch(e){ /* muhim emas */ }
-}
 async function getAliasDoc(aliasRaw){
   const snap = await getDoc(doc(db,"aliases",slugify(aliasRaw)));
   return snap.exists() ? snap.data() : null;
 }
 
+// ---------- Supabase Storage'ga faylni yuklash, Firestore'ga faqat metama'lumot yozish ----------
 async function uploadOneFile(sid, file, onProgress){
   const relpath = (file.__relpath || file.name).replace(/^\/+/, "");
-  const b64 = await readAsBase64(file);
-  const chunks = chunkStr(b64, CHUNK_SIZE);
-  const fileRef = doc(db, "sites", sid, "files", pathId(relpath));
+  const mime = mimeOf(relpath);
+  const storagePath = `${sid}/${relpath}`;
 
+  onProgress(15);
+  const { error: upErr } = await supabase.storage
+    .from(SUPABASE_BUCKET)
+    .upload(storagePath, file, { upsert: true, contentType: mime, cacheControl: "3600" });
+  if(upErr) throw new Error(upErr.message);
+  onProgress(75);
+
+  const { data: pub } = supabase.storage.from(SUPABASE_BUCKET).getPublicUrl(storagePath);
+
+  const fileRef = doc(db, "sites", sid, "files", pathId(relpath));
   await setDoc(fileRef, {
     path: relpath,
     kind: guessType(relpath),
-    mime: mimeOf(relpath),
+    mime,
     size: file.size,
-    totalChunks: chunks.length,
+    storagePath,
+    url: pub.publicUrl,
     updatedAt: serverTimestamp()
   });
-
-  let batch = writeBatch(db);
-  let opsInBatch = 0;
-  for(let i=0;i<chunks.length;i++){
-    const chunkRef = doc(db, "sites", sid, "files", pathId(relpath), "chunks", String(i));
-    batch.set(chunkRef, { data: chunks[i] });
-    opsInBatch++;
-    if(opsInBatch>=400){
-      await batch.commit();
-      batch = writeBatch(db);
-      opsInBatch = 0;
-    }
-    onProgress(Math.round(((i+1)/chunks.length)*100));
-  }
-  if(opsInBatch>0) await batch.commit();
+  onProgress(100);
 }
 
 async function listMySites(username){
@@ -474,36 +457,23 @@ async function listMySites(username){
   return snap.docs.map(d=>d.data());
 }
 
-// ---------- sayt fayllarini o'qib qayta tiklash ----------
+// ---------- sayt fayllari ro'yxatini Firestore'dan o'qish (og'irligi kam — faqat metama'lumot) ----------
 async function loadSiteFiles(sid){
   const filesSnap = await getDocs(collection(db,"sites",sid,"files"));
   const result = {};
-  for(const fdoc of filesSnap.docs){
+  filesSnap.docs.forEach(fdoc=>{
     const meta = fdoc.data();
-    const chunksSnap = await getDocs(collection(db,"sites",sid,"files",fdoc.id,"chunks"));
-    const parts = new Array(meta.totalChunks).fill("");
-    chunksSnap.docs.forEach(c=>{
-      const idx = parseInt(c.id,10);
-      parts[idx] = c.data().data;
-    });
-    const b64 = parts.join("");
-    result[meta.path] = { ...meta, base64: b64 };
-  }
+    result[meta.path] = meta;
+  });
   return result;
 }
 
-function renderSiteHtml(files){
+// ---------- index.html'ni Supabase'dan olib, ichidagi nisbiy yo'llarni public URL'ga almashtirish ----------
+async function renderSiteHtml(files){
   const indexKey = Object.keys(files).find(p => p.toLowerCase() === "index.html")
     || Object.keys(files).find(p => p.toLowerCase().endsWith("/index.html"));
   if(!indexKey) return null;
 
-  function decodeText(entry){
-    try{ return decodeURIComponent(escape(atob(entry.base64))); }
-    catch(e){ return atob(entry.base64); }
-  }
-  function dataUrl(entry){
-    return `data:${entry.mime};base64,${entry.base64}`;
-  }
   function resolve(basePath, ref){
     if(/^(https?:)?\/\//.test(ref) || ref.startsWith("data:")) return null;
     const baseDir = basePath.includes("/") ? basePath.slice(0, basePath.lastIndexOf("/")+1) : "";
@@ -517,30 +487,28 @@ function renderSiteHtml(files){
     return out.join("/");
   }
 
-  let html = decodeText(files[indexKey]);
+  const res = await fetch(files[indexKey].url, { cache: "no-store" });
+  if(!res.ok) throw new Error("index.html yuklab bo'lmadi (HTTP " + res.status + ")");
+  let html = await res.text();
 
-  html = html.replace(/<link[^>]+rel=["']stylesheet["'][^>]*href=["']([^"']+)["'][^>]*>/gi, (m, href)=>{
-    const key = resolve(indexKey, href);
-    if(key && files[key]) return `<style>\n${decodeText(files[key])}\n</style>`;
-    return m;
-  });
-
-  html = html.replace(/<script([^>]*)\ssrc=["']([^"']+)["']([^>]*)><\/script>/gi, (m, pre, src, post)=>{
-    const key = resolve(indexKey, src);
-    if(key && files[key]) return `<script${pre}${post}>\n${decodeText(files[key])}\n<\/script>`;
-    return m;
-  });
-
+  // Nisbiy src/href larni Supabase'dagi public URL'larga almashtiramiz —
+  // brauzer keyin fayllarni to'g'ridan-to'g'ri CDN'dan, parallel yuklaydi.
   html = html.replace(/(src|href)=["']([^"':][^"']*)["']/gi, (m, attr, ref)=>{
     if(/^(https?:|data:|mailto:|tel:|#)/.test(ref)) return m;
     const key = resolve(indexKey, ref);
-    if(key && files[key] && files[key].kind === "binary"){
-      return `${attr}="${dataUrl(files[key])}"`;
-    }
-    if(key && files[key] && files[key].kind === "text" && /\.(css)$/i.test(key)){
-      return `${attr}="${dataUrl({...files[key], mime:"text/css", base64: btoa(unescape(encodeURIComponent(decodeText(files[key]))))})}"`;
-    }
+    if(key && files[key]) return `${attr}="${files[key].url}"`;
     return m;
+  });
+
+  // CSS ichidagi url(...) murojaatlarini ham almashtiramiz (masalan fon rasm)
+  html = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (m, css)=>{
+    const newCss = css.replace(/url\((['"]?)([^'")]+)\1\)/gi, (mm, q, ref)=>{
+      if(/^(https?:|data:)/.test(ref)) return mm;
+      const key = resolve(indexKey, ref);
+      if(key && files[key]) return `url(${q}${files[key].url}${q})`;
+      return mm;
+    });
+    return m.replace(css, newCss);
   });
 
   return html;
@@ -692,7 +660,7 @@ function renderDashboard(){
       <div class="hero">
         <div class="eyebrow">HTML · CSS · JS ni sudrab tashlang</div>
         <h1>Loyihangizni <em>${DOMAIN}</em> ga bir necha soniyada joylang</h1>
-        <p class="sub">Fayllaringiz Firestore'da base64 ko'rinishida bo'lak-bo'lak (chunk) saqlanadi — alohida server kerak emas.</p>
+        <p class="sub">Fayllar Supabase Storage'da saqlanadi va CDN orqali to'g'ridan-to'g'ri yuklanadi — tezkor va yengil.</p>
       </div>
 
       <div class="panel">
@@ -915,7 +883,7 @@ function renderViewer(username, project){
     <div id="viewerBody"></div>
   `;
   const body = document.getElementById("viewerBody");
-  body.innerHTML = `<div class="viewer-state"><div class="code">···</div><p>Sayt yuklanmoqda, fayllar Firestore'dan tiklanmoqda...</p></div>`;
+  body.innerHTML = `<div class="viewer-state"><div class="code">···</div><p>Sayt yuklanmoqda...</p></div>`;
   loadAndRenderSite(sid, body, "Bu manzilda sayt topilmadi. Username va loyiha nomini tekshiring.");
 }
 
@@ -944,14 +912,20 @@ function renderViewerByAlias(aliasSlug){
   });
 }
 
-// Ikkalasi (username/project va alias) uchun umumiy: fayllarni o'qib, iframe'ga chizadi
+// Ikkalasi (username/project va alias) uchun umumiy: fayllar ro'yxatini o'qib, iframe'ga chizadi
 function loadAndRenderSite(sid, body, notFoundMsg){
-  loadSiteFiles(sid).then(files=>{
+  loadSiteFiles(sid).then(async files=>{
     if(!Object.keys(files).length){
       body.innerHTML = `<div class="viewer-state"><div class="code">404</div><p>${notFoundMsg}</p></div>`;
       return;
     }
-    const html = renderSiteHtml(files);
+    let html;
+    try{
+      html = await renderSiteHtml(files);
+    }catch(err){
+      body.innerHTML = `<div class="viewer-state"><div class="code">!</div><p>Xatolik: ${err.message}</p></div>`;
+      return;
+    }
     if(!html){
       body.innerHTML = `<div class="viewer-state"><div class="code">?</div><p>index.html topilmadi. Loyiha to'liq yuklanmagan bo'lishi mumkin.</p></div>`;
       return;
