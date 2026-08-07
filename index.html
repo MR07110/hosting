@@ -245,7 +245,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
-  getFirestore, doc, setDoc, getDoc, getDocs, collection, writeBatch,
+  getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc, collection, writeBatch,
   query, where, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
@@ -398,13 +398,43 @@ async function entriesFromDataTransfer(dt){
 }
 
 // ---------- Firestore'ga yozish ----------
-async function ensureSiteDoc(sid, username, project, ownerUid){
+async function ensureSiteDoc(sid, username, project, ownerUid, alias){
   await setDoc(doc(db,"sites",sid), {
     username: slugify(username),
     project: slugify(project),
+    alias: alias || null,
     ownerUid,
     createdAt: serverTimestamp()
   }, { merge:true });
+}
+
+// ---------- Ixtiyoriy erkin alias (domen.uz/xoxlagan-nom) ----------
+// "aliases" nomli alohida to'plamda saqlanadi: hujjat id-si = alias slug,
+// qiymati esa qaysi sайtga (siteId) ishora qilishini bildiradi.
+async function claimAlias(aliasRaw, sid, username, project){
+  const aSlug = slugify(aliasRaw);
+  if(!aSlug) return null;
+  const aRef = doc(db,"aliases",aSlug);
+  const existing = await getDoc(aRef);
+  if(existing.exists() && existing.data().siteId !== sid){
+    throw new Error(`"${aSlug}" nomi band — boshqasini tanlang`);
+  }
+  await setDoc(aRef, {
+    siteId: sid,
+    username: slugify(username),
+    project: slugify(project),
+    updatedAt: serverTimestamp()
+  });
+  return aSlug;
+}
+async function releaseAlias(aliasRaw){
+  const aSlug = slugify(aliasRaw);
+  if(!aSlug) return;
+  try{ await deleteDoc(doc(db,"aliases",aSlug)); }catch(e){ /* muhim emas */ }
+}
+async function getAliasDoc(aliasRaw){
+  const snap = await getDoc(doc(db,"aliases",slugify(aliasRaw)));
+  return snap.exists() ? snap.data() : null;
 }
 
 async function uploadOneFile(sid, file, onProgress){
@@ -537,8 +567,9 @@ function renderBoot(){
 function route(){
   const hash = location.hash.replace(/^#\/?/, "");
   if(hash){
-    const [user, project] = hash.split("/").filter(Boolean);
-    if(user && project){ renderViewer(user, project); return; }
+    const parts = hash.split("/").filter(Boolean);
+    if(parts.length >= 2){ renderViewer(parts[0], parts[1]); return; }
+    if(parts.length === 1){ renderViewerByAlias(parts[0]); return; }
   }
   if(!authChecked){ renderBoot(); return; }
   if(!authUser){ renderAuth(); return; }
@@ -671,6 +702,17 @@ function renderDashboard(){
           <div class="prefix-input"><span>${DOMAIN}/${authUsername}/</span><input type="text" id="project" placeholder="portfolio" autocomplete="off"></div>
         </div>
         <div class="url-preview" id="urlPreview">${DOMAIN}/${authUsername}/<span class="path">loyiha</span></div>
+
+        <div id="aliasToggleWrap" style="margin-top:12px;">
+          <a href="#" id="aliasToggleLink" style="font-size:12.5px; color:var(--fg-muted); display:inline-flex; align-items:center; gap:4px;">+ Ixtiyoriy erkin domen qo'shish</a>
+        </div>
+        <div id="aliasBox" style="display:none; margin-top:12px;">
+          <div class="field">
+            <label>Erkin domen <span style="font-weight:400;color:var(--fg-muted);">(username hisobga olinmaydi)</span></label>
+            <div class="prefix-input"><span>${DOMAIN}/</span><input type="text" id="alias" placeholder="masalan: mening-portfoliom" autocomplete="off"></div>
+          </div>
+          <div class="url-preview" id="aliasPreview">Bo'sh qoldirilsa, faqat yuqoridagi manzil ishlaydi</div>
+        </div>
       </div>
 
       <div class="panel">
@@ -705,6 +747,17 @@ function renderDashboard(){
 
   const projectEl = document.getElementById("project");
   const urlPreview = document.getElementById("urlPreview");
+  const aliasEl = document.getElementById("alias");
+  const aliasPreview = document.getElementById("aliasPreview");
+  const aliasBox = document.getElementById("aliasBox");
+  const aliasToggleLink = document.getElementById("aliasToggleLink");
+  const aliasToggleWrap = document.getElementById("aliasToggleWrap");
+  aliasToggleLink.addEventListener("click", (e)=>{
+    e.preventDefault();
+    aliasBox.style.display = "block";
+    aliasToggleWrap.style.display = "none";
+    aliasEl.focus();
+  });
   const dropzone = document.getElementById("dropzone");
   const fileInput = document.getElementById("fileInput");
   const folderInput = document.getElementById("folderInput");
@@ -722,6 +775,15 @@ function renderDashboard(){
   projectEl.addEventListener("input", updatePreview);
   updatePreview();
 
+  function updateAliasPreview(){
+    const a = slugify(aliasEl.value);
+    aliasPreview.innerHTML = a
+      ? `${DOMAIN}/<span class="path">${a}</span>`
+      : "Bo'sh qoldirilsa, faqat yuqoridagi manzil ishlaydi";
+  }
+  aliasEl.addEventListener("input", updateAliasPreview);
+  updateAliasPreview();
+
   async function refreshSites(){
     try{
       const sites = await listMySites(authUsername);
@@ -731,6 +793,7 @@ function renderDashboard(){
           <div>
             <div class="name">${s.project}<span class="badge">Public</span></div>
             <div class="url">${DOMAIN}/${s.username}/${s.project}</div>
+            ${s.alias ? `<div class="url" style="color:var(--accent-fg);">${DOMAIN}/${s.alias}</div>` : ""}
             <div class="meta">${s.fileCount ?? "?"} ta fayl</div>
           </div>
           <button class="btn-ghost" onclick="location.hash='#/${s.username}/${s.project}'">Ko'rish</button>
@@ -790,16 +853,21 @@ function renderDashboard(){
 
   publishBtn.addEventListener("click", async ()=>{
     const project = projectEl.value.trim();
+    const aliasRaw = aliasEl.value.trim();
     if(!project){ showToast("Loyiha nomini kiriting", "err"); return; }
     if(!selectedFiles.some(f => (f.__relpath||f.name).toLowerCase() === "index.html")){
       showToast("index.html topilmadi — asosiy sahifa shart", "err"); return;
     }
     publishBtn.disabled = true;
     const sid = siteId(authUsername, project);
+    let aliasSlug = null;
     try{
-      await ensureSiteDoc(sid, authUsername, project, authUser.uid);
+      await ensureSiteDoc(sid, authUsername, project, authUser.uid, aliasRaw ? slugify(aliasRaw) : null);
+      if(aliasRaw){
+        aliasSlug = await claimAlias(aliasRaw, sid, authUsername, project);
+      }
     }catch(e){
-      showToast("Loyihani yaratib bo'lmadi: " + e.message, "err");
+      showToast("Xatolik: " + e.message, "err");
       publishBtn.disabled = false;
       return;
     }
@@ -822,8 +890,13 @@ function renderDashboard(){
     }
     if(done>0){
       await setDoc(doc(db,"sites",sid), { fileCount: done }, { merge:true });
-      showToast(`Nashr qilindi: ${DOMAIN}/${authUsername}/${slugify(project)}`, "ok");
+      const msg = aliasSlug
+        ? `Nashr qilindi: ${DOMAIN}/${authUsername}/${slugify(project)}  •  ${DOMAIN}/${aliasSlug}`
+        : `Nashr qilindi: ${DOMAIN}/${authUsername}/${slugify(project)}`;
+      showToast(msg, "ok");
       selectedFiles = []; renderFileList();
+      aliasEl.value = ""; updateAliasPreview();
+      aliasBox.style.display = "none"; aliasToggleWrap.style.display = "block";
       refreshSites();
     }
     publishBtn.disabled = false;
@@ -843,10 +916,39 @@ function renderViewer(username, project){
   `;
   const body = document.getElementById("viewerBody");
   body.innerHTML = `<div class="viewer-state"><div class="code">···</div><p>Sayt yuklanmoqda, fayllar Firestore'dan tiklanmoqda...</p></div>`;
+  loadAndRenderSite(sid, body, "Bu manzilda sayt topilmadi. Username va loyiha nomini tekshiring.");
+}
 
+// ---------- Erkin alias orqali ko'rish sahifasi (domen.uz/xoxlagan-nom) ----------
+function renderViewerByAlias(aliasSlug){
+  const clean = slugify(aliasSlug);
+  app.innerHTML = `
+    <div class="viewer-bar">
+      <span class="lock">●</span>
+      <span class="addr">${DOMAIN}/${clean}</span>
+      <button class="btn-ghost" onclick="location.hash=''">← Boshqaruv paneli</button>
+    </div>
+    <div id="viewerBody"></div>
+  `;
+  const body = document.getElementById("viewerBody");
+  body.innerHTML = `<div class="viewer-state"><div class="code">···</div><p>Sayt yuklanmoqda...</p></div>`;
+
+  getAliasDoc(clean).then(a=>{
+    if(!a){
+      body.innerHTML = `<div class="viewer-state"><div class="code">404</div><p>"${clean}" nomida sayt topilmadi.</p></div>`;
+      return;
+    }
+    loadAndRenderSite(a.siteId, body, "Bu saytning fayllari topilmadi.");
+  }).catch(err=>{
+    body.innerHTML = `<div class="viewer-state"><div class="code">!</div><p>Xatolik: ${err.message}. Firestore xavfsizlik qoidalarini tekshiring.</p></div>`;
+  });
+}
+
+// Ikkalasi (username/project va alias) uchun umumiy: fayllarni o'qib, iframe'ga chizadi
+function loadAndRenderSite(sid, body, notFoundMsg){
   loadSiteFiles(sid).then(files=>{
     if(!Object.keys(files).length){
-      body.innerHTML = `<div class="viewer-state"><div class="code">404</div><p>Bu manzilda sayt topilmadi. Username va loyiha nomini tekshiring.</p></div>`;
+      body.innerHTML = `<div class="viewer-state"><div class="code">404</div><p>${notFoundMsg}</p></div>`;
       return;
     }
     const html = renderSiteHtml(files);
