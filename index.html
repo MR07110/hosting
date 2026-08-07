@@ -370,7 +370,27 @@ async function entriesFromDataTransfer(dt){
     if(it) entries.push(it);
   }
   if(entries.length){
-    for(const e of entries) await readEntry(e, "");
+    for(const e of entries){
+      // Agar tashlangan narsa papka bo'lsa, papka nomini yo'lga qo'shmaymiz —
+      // ichidagi fayllar to'g'ridan-to'g'ri root-relative bo'ladi.
+      if(e.isDirectory){
+        const reader = e.createReader();
+        const children = await new Promise((res)=> {
+          let all = [];
+          function readBatch(){
+            reader.readEntries(batch=>{
+              if(batch.length===0){ res(all); return; }
+              all = all.concat(batch);
+              readBatch();
+            });
+          }
+          readBatch();
+        });
+        for(const c of children) await readEntry(c, "");
+      } else {
+        await readEntry(e, "");
+      }
+    }
   } else {
     for(const f of dt.files) { f.__relpath = f.name; files.push(f); }
   }
@@ -745,8 +765,19 @@ function renderDashboard(){
 
   pickFilesBtn.addEventListener("click", (e)=>{ e.stopPropagation(); fileInput.click(); });
   pickFolderBtn.addEventListener("click", (e)=>{ e.stopPropagation(); folderInput.click(); });
+  function stripTopFolder(files){
+    // Papka orqali tanlanganda webkitRelativePath "PapkaNomi/index.html" bo'ladi.
+    // Birinchi segmentni (papka nomini) olib tashlab, root-relative qilamiz.
+    for(const f of files){
+      const rp = f.webkitRelativePath || f.name;
+      const parts = rp.split("/");
+      f.__relpath = parts.length > 1 ? parts.slice(1).join("/") : rp;
+    }
+    return files;
+  }
+
   fileInput.addEventListener("change", (e)=>{ addFiles(Array.from(e.target.files)); fileInput.value=""; });
-  folderInput.addEventListener("change", (e)=>{ addFiles(Array.from(e.target.files)); folderInput.value=""; });
+  folderInput.addEventListener("change", (e)=>{ addFiles(stripTopFolder(Array.from(e.target.files))); folderInput.value=""; });
   ["dragover","dragenter"].forEach(ev=> dropzone.addEventListener(ev, e=>{ e.preventDefault(); dropzone.classList.add("drag"); }));
   ["dragleave","dragend"].forEach(ev=> dropzone.addEventListener(ev, ()=> dropzone.classList.remove("drag")));
   dropzone.addEventListener("drop", async (e)=>{
