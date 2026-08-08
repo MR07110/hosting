@@ -188,27 +188,47 @@
   .viewer-state .code{font-family:var(--mono); font-size:52px; color:var(--fg-muted); font-weight:700;}
   .viewer-state p{color:var(--fg-muted); max-width:400px; font-size:14px;}
 
-  /* ---- Kulgili real-progress loading ekrani ---- */
-  .load-emoji{font-size:54px; animation:load-bounce 1s ease-in-out infinite;}
-  @keyframes load-bounce{
-    0%,100%{transform:translateY(0) rotate(0deg);}
-    50%{transform:translateY(-14px) rotate(-6deg);}
+  /* ---- Jonli/kulgili real-progress loading ekrani (matn jiddiy, animatsiya funny) ---- */
+  .load-dots{display:flex; gap:9px; height:26px; align-items:flex-end;}
+  .load-dots span{
+    width:14px; height:14px; border-radius:50%;
+    background:var(--accent-fg);
+    animation:load-hop 0.9s ease-in-out infinite;
   }
-  .load-pct{font-family:var(--mono); font-size:44px; font-weight:800; color:var(--accent-fg); letter-spacing:-.02em;}
+  .load-dots span:nth-child(1){animation-delay:0s; background:#3fb950;}
+  .load-dots span:nth-child(2){animation-delay:.15s; background:#58a6ff;}
+  .load-dots span:nth-child(3){animation-delay:.3s; background:#d29922;}
+  .load-dots span:nth-child(4){animation-delay:.45s; background:#f778ba;}
+  @keyframes load-hop{
+    0%, 60%, 100%{transform:translateY(0) scaleX(1) scaleY(1);}
+    30%{transform:translateY(-20px) scaleX(0.85) scaleY(1.15);}
+    52%{transform:translateY(0) scaleX(1.3) scaleY(0.7);}
+  }
+  .load-pct{
+    font-family:var(--mono); font-size:44px; font-weight:800; color:var(--accent-fg); letter-spacing:-.02em;
+    display:inline-block; transition:transform .18s cubic-bezier(.34,1.6,.64,1);
+  }
+  .load-pct.pop{transform:scale(1.28) rotate(-3deg);}
   .load-bar-track{
-    width:260px; max-width:80vw; height:10px; border-radius:999px; background:var(--border-muted);
+    width:260px; max-width:80vw; height:14px; border-radius:999px; background:var(--border-muted);
     overflow:hidden; position:relative; box-shadow:inset 0 0 0 1px var(--border-default);
   }
   .load-bar-fill{
-    height:100%; width:0%; border-radius:999px;
-    background:linear-gradient(90deg, var(--success-emphasis), var(--accent-fg), var(--success-emphasis));
-    background-size:200% 100%;
-    animation:load-stripes 1.1s linear infinite;
-    transition:width .25s ease-out;
+    height:100%; width:0%; border-radius:999px 40% 40% 999px / 999px 60% 60% 999px;
+    background:linear-gradient(90deg, #3fb950, #58a6ff, #d29922, #f778ba, #3fb950);
+    background-size:300% 100%;
+    animation:load-hue 1.6s linear infinite, load-squish 0.5s ease-in-out infinite;
+    transition:width .3s cubic-bezier(.34,1.56,.64,1);
+    transform-origin:left center;
   }
-  @keyframes load-stripes{ 0%{background-position:0% 0;} 100%{background-position:-200% 0;} }
-  .load-msg{color:var(--fg-default); font-size:14.5px; font-weight:600; min-height:20px; transition:opacity .2s;}
+  @keyframes load-hue{ 0%{background-position:0% 0;} 100%{background-position:-300% 0;} }
+  @keyframes load-squish{
+    0%,100%{transform:scaleY(1);}
+    50%{transform:scaleY(1.35);}
+  }
+  .load-msg{color:var(--fg-default); font-size:14.5px; font-weight:600;}
   .load-fname{color:var(--fg-subtle); font-size:11.5px; font-family:var(--mono); max-width:70vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+
 
   /* Mustaqil sayt ko'rsatilganda orqadagi MRhosting sahifasi butunlay
      skrollanmasin — aks holda fixed iframe joyida qolib, orqa fon
@@ -1031,45 +1051,19 @@ function renderViewerByAlias(aliasSlug){
   });
 }
 
-// ---- Kulgili yuklash ekrani: haqiqiy progress + aylanma hazil xabarlar ----
-const FUN_LOAD_MESSAGES = [
-  "🚀 Serverlar uyg'otilmoqda...",
-  "🧩 Piksellar joy-joyiga terilmoqda...",
-  "☕ Bitlar hali qahva ichyapti...",
-  "🐢→🐇 Tezlik oshirilmoqda...",
-  "🎨 Ranglar tanlanmoqda...",
-  "📦 Quti ehtiyotkorlik bilan ochilmoqda...",
-  "🛸 Fayllar orbitadan tushirilmoqda...",
-  "🔧 Vintlar burab mahkamlanmoqda...",
-  "✨ Bir siqim sehr qo'shilmoqda...",
-  "🧵 Iplar tugunlardan chiqarilmoqda...",
-];
-let _funMsgTimer = null;
-
-function stopFunMessages(){
-  if(_funMsgTimer){ clearInterval(_funMsgTimer); _funMsgTimer = null; }
-}
-
+// ---- Yuklash ekrani: real progress-foiz + jonli (funny) CSS-animatsiya ----
+// Matn jiddiy va statik — "funny" bo'lgani faqat vizual: sakragan nuqtalar,
+// "jele" kabi cho'ziladigan progress-bar, foiz raqami har yangilanishda "pop" qiladi.
 function renderLoadingUI(body, total){
-  stopFunMessages();
   body.innerHTML = `
     <div class="viewer-state">
-      <div class="load-emoji" id="loadEmoji">🚀</div>
+      <div class="load-dots"><span></span><span></span><span></span><span></span></div>
       <div class="load-pct" id="loadPct">0%</div>
       <div class="load-bar-track"><div class="load-bar-fill" id="loadBarFill"></div></div>
-      <div class="load-msg" id="loadMsg">${FUN_LOAD_MESSAGES[0]}</div>
-      <div class="load-fname" id="loadFname">${total} ta fayl kutilmoqda...</div>
+      <div class="load-msg">Yuklanmoqda</div>
+      <div class="load-fname" id="loadFname">0 / ${total} fayl</div>
     </div>
   `;
-  let mi = 0;
-  const emojiEl = document.getElementById("loadEmoji");
-  const msgEl = document.getElementById("loadMsg");
-  const emojis = ["🚀","🧩","☕","🐇","🎨","📦","🛸","🔧","✨","🧵"];
-  _funMsgTimer = setInterval(()=>{
-    mi = (mi + 1) % FUN_LOAD_MESSAGES.length;
-    if(msgEl){ msgEl.style.opacity = 0; setTimeout(()=>{ msgEl.textContent = FUN_LOAD_MESSAGES[mi]; msgEl.style.opacity = 1; }, 150); }
-    if(emojiEl){ emojiEl.textContent = emojis[mi]; }
-  }, 1100);
 }
 
 function updateLoadingProgress(loaded, total, currentFile){
@@ -1077,9 +1071,14 @@ function updateLoadingProgress(loaded, total, currentFile){
   const pctEl = document.getElementById("loadPct");
   const barEl = document.getElementById("loadBarFill");
   const fnameEl = document.getElementById("loadFname");
-  if(pctEl) pctEl.textContent = pct + "%";
+  if(pctEl){
+    pctEl.textContent = pct + "%";
+    pctEl.classList.remove("pop");
+    void pctEl.offsetWidth; // qayta trigger uchun reflow
+    pctEl.classList.add("pop");
+  }
   if(barEl) barEl.style.width = pct + "%";
-  if(fnameEl) fnameEl.textContent = `(${loaded}/${total}) ${currentFile || ""}`;
+  if(fnameEl) fnameEl.textContent = `${loaded} / ${total} fayl — ${currentFile || ""}`;
   document.title = `⏳ ${pct}% — yuklanmoqda`;
 }
 
@@ -1111,21 +1110,20 @@ async function loadAndRenderSite(sid, body, notFoundMsg){
     try{
       html = await renderSiteHtml(files);
     }catch(err){
-      stopFunMessages(); resetTabIdentity();
+      resetTabIdentity();
       body.innerHTML = `<div class="viewer-state"><div class="code">!</div><p>Xatolik: ${err.message}</p></div>`;
       return;
     }
     if(!html){
-      stopFunMessages(); resetTabIdentity();
+      resetTabIdentity();
       body.innerHTML = `<div class="viewer-state"><div class="code">?</div><p>index.html topilmadi. Loyiha to'liq yuklanmagan bo'lishi mumkin.</p></div>`;
       return;
     }
-    stopFunMessages();
     applyTabIdentity(html, files);
     body.innerHTML = `<iframe id="siteframe" sandbox="allow-scripts allow-forms allow-popups allow-modals"></iframe>`;
     document.getElementById("siteframe").srcdoc = html;
   }catch(err){
-    stopFunMessages(); resetTabIdentity();
+    resetTabIdentity();
     body.innerHTML = `<div class="viewer-state"><div class="code">!</div><p>Xatolik: ${err.message}. Firestore xavfsizlik qoidalarini tekshiring.</p></div>`;
   }
 }
