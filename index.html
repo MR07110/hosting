@@ -348,6 +348,26 @@ function slugify(str){
     .replace(/-+/g,"-")
     .replace(/^-|-$/g,"");
 }
+// ---------- loyihaga keraksiz fayl/papkalarni chiqarib tashlash ----------
+// .git, node_modules va shunga o'xshash texnik papkalar minglab mayda
+// fayllardan iborat bo'lishi mumkin — ularni yuklashga urinish tezlikni
+// pasaytiradi va navbatni band qilib, aslida kerakli .js/.md kabi
+// fayllarning yuklanishiga xalaqit beradi. Shuning uchun bunday
+// papka/fayllar hali o'qilmasdanoq chetlab o'tiladi.
+const EXCLUDED_DIR_NAMES = new Set([".git","node_modules",".idea",".vscode","__pycache__",".next",".cache",".svn",".hg"]);
+const EXCLUDED_FILE_NAMES = new Set([".ds_store","thumbs.db",".env",".gitignore",".gitattributes"]);
+function isExcludedName(name){
+  return EXCLUDED_DIR_NAMES.has((name||"").toLowerCase());
+}
+function isExcludedPath(relpath){
+  const parts = (relpath||"").split("/");
+  const filename = parts[parts.length-1].toLowerCase();
+  if(EXCLUDED_FILE_NAMES.has(filename)) return true;
+  for(let i=0;i<parts.length-1;i++){
+    if(EXCLUDED_DIR_NAMES.has(parts[i].toLowerCase())) return true;
+  }
+  return false;
+}
 function pathId(p){ return p.replace(/\//g,"__"); }
 function siteId(user, project){ return `${slugify(user)}__${slugify(project)}`; }
 function fmtSize(b){
@@ -373,7 +393,7 @@ function mimeOf(name){
     html:"text/html", htm:"text/html", css:"text/css", js:"application/javascript",
     json:"application/json", svg:"image/svg+xml", png:"image/png", jpg:"image/jpeg",
     jpeg:"image/jpeg", gif:"image/gif", webp:"image/webp", ico:"image/x-icon",
-    woff:"font/woff", woff2:"font/woff2", txt:"text/plain"
+    woff:"font/woff", woff2:"font/woff2", txt:"text/plain", md:"text/markdown"
   };
   return map[ext] || "application/octet-stream";
 }
@@ -413,7 +433,9 @@ async function entriesFromDataTransfer(dt){
   const items = dt.items;
   const files = [];
   async function readEntry(entry, path){
+    if(isExcludedName(entry.name)) return; // .git, node_modules va h.k. — o'qilmaydi ham
     if(entry.isFile){
+      if(isExcludedPath(path + entry.name)) return;
       await new Promise((res)=> entry.file(f=>{ f.__relpath = path + f.name; files.push(f); res(); }));
     } else if(entry.isDirectory){
       const reader = entry.createReader();
@@ -930,11 +952,16 @@ function renderDashboard(){
   }
 
   function addFiles(newFiles){
+    let skipped = 0;
     for(const f of newFiles){
       if(!f.__relpath) f.__relpath = f.webkitRelativePath || f.name;
+      if(isExcludedPath(f.__relpath)){ skipped++; continue; }
       selectedFiles.push(f);
     }
     renderFileList();
+    if(skipped > 0){
+      showToast(`${skipped} ta keraksiz fayl (.git, node_modules va h.k.) chiqarib tashlandi`, "");
+    }
   }
 
   pickFilesBtn.addEventListener("click", (e)=>{ e.stopPropagation(); fileInput.click(); });
