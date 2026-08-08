@@ -179,16 +179,11 @@
   .auth-field{margin-bottom:14px; display:flex; flex-direction:column; gap:6px;}
   .auth-field label{font-size:12px; color:var(--fg-default); font-weight:600;}
 
-  .viewer-bar{
-    display:flex; align-items:center; gap:12px; padding:10px 20px; background:var(--canvas-default);
-    border-bottom:1px solid var(--border-default); font-size:13px; min-width:0;
-  }
-  .viewer-bar .lock{color:var(--success-fg); font-size:11px;}
-  .viewer-bar .addr{color:var(--fg-muted); flex:1; font-family:var(--mono); min-width:0; word-break:break-all;}
-  iframe#siteframe{width:100%; height:calc(100vh - 108px); border:none; background:#fff; display:block;}
+  /* ---- Mustaqil sayt ko'rinishi: hech qanday MRhosting xrom (bar, header) yo'q ---- */
+  iframe#siteframe{position:fixed; inset:0; width:100vw; height:100vh; border:none; margin:0; padding:0; background:#fff; display:block;}
   .viewer-state{
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    height:70vh; gap:12px; text-align:center; padding:0 20px;
+    position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:12px; text-align:center; padding:0 20px; background:var(--canvas-subtle); z-index:10;
   }
   .viewer-state .code{font-family:var(--mono); font-size:52px; color:var(--fg-muted); font-weight:700;}
   .viewer-state p{color:var(--fg-muted); max-width:400px; font-size:14px;}
@@ -223,11 +218,7 @@
     .auth-wrap{padding:28px 16px;}
     .auth-logo{font-size:18px;}
     .tabs .tab{font-size:12.5px; padding:8px 4px;}
-    .viewer-bar{padding:8px 12px; font-size:12px; flex-wrap:wrap;}
-    .viewer-bar .addr{font-size:11px; word-break:break-all;}
-    iframe#siteframe{height:calc(100vh - 138px);}
     .viewer-state .code{font-size:38px;}
-    .viewer-state p{font-size:13px;}
     .toast{left:16px; right:16px; transform:translateY(20px); width:auto;}
     .toast.show{transform:translateY(0);}
   }
@@ -285,6 +276,11 @@ const LOGO_SVG = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" wi
   <rect x="33" y="45.3" width="10.5" height="2" rx="1" fill="#3fb950"/>
 </svg>`;
 
+// MRhosting o'zining boshlang'ich tab-nomi/ikonkasi — mustaqil sayt ko'rsatilgach,
+// dashboardga qaytilganda shu qiymatlarga tiklanadi.
+const DEFAULT_TITLE = document.title;
+const DEFAULT_FAVICON = document.querySelector('link[rel="icon"]')?.getAttribute("href") || "";
+
 // ---------- yordamchi funksiyalar ----------
 function slugify(str){
   return (str||"").toLowerCase().trim()
@@ -332,6 +328,24 @@ function authErrMsg(code){
     "auth/too-many-requests": "Juda ko'p urinish — biroz kuting"
   };
   return map[code] || "Xatolik yuz berdi, qayta urinib ko'ring";
+}
+
+// Mustaqil sayt ko'rsatilganda brauzer tab nomi/ikonkasini o'sha saytnikiga almashtiradi,
+// dashboardga qaytilganda esa MRhosting'nikiga qaytaradi — xuddi alohida domen kabi.
+function applyTabIdentity(html, files){
+  const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = m ? m[1].replace(/<[^>]*>/g,"").trim() : "";
+  document.title = title || DEFAULT_TITLE;
+
+  const favKey = Object.keys(files).find(p => /(^|\/)favicon\.(ico|png|svg)$/i.test(p));
+  let link = document.querySelector('link[rel="icon"]');
+  if(!link){ link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
+  link.href = favKey ? files[favKey].url : DEFAULT_FAVICON;
+}
+function resetTabIdentity(){
+  document.title = DEFAULT_TITLE;
+  const link = document.querySelector('link[rel="icon"]');
+  if(link) link.href = DEFAULT_FAVICON;
 }
 
 // ---------- fayllarni yig'ish (drag&drop papkalar bilan) ----------
@@ -451,6 +465,67 @@ async function uploadOneFile(sid, file, onProgress){
   onProgress(100);
 }
 
+// ---------- 100+ fayl yuklashda "qotib qolish"ni oldini olish ----------
+// Muammoning sababi: avvalgi versiyada fayllar birma-bir, ketma-ket
+// yuklangan va bironta so'rov tarmoqda "osilib qolsa" (javob kelmasa),
+// undan keyingi HAMMA fayllar navbatda kutib qolar edi (brauzer hech qanday
+// xato bermay, faqat juda uzoq default timeout kutar edi). Shu sababli:
+//  1) Fayllar bir nechtasi PARALLEL yuklanadi (concurrency pool),
+//  2) Har bir fayl uchun QATTIQ timeout qo'yiladi — vaqt tugasa, o'sha
+//     faylgina "xato" deb belgilanadi va navbat davom etadi,
+//  3) Timeoutdan keyin bir marta avtomatik qayta urinib ko'riladi.
+const UPLOAD_CONCURRENCY = 5;      // bir vaqtda nechta fayl yuklanishi
+const UPLOAD_TIMEOUT_MS = 25000;   // bitta fayl uchun maksimal kutish vaqti
+const UPLOAD_MAX_RETRIES = 2;      // muvaffaqiyatsiz bo'lsa, necha marta qayta urinish
+
+function withTimeout(promise, ms, label){
+  let timer;
+  const timeout = new Promise((_, reject)=>{
+    timer = setTimeout(()=> reject(new Error(label || "vaqt tugadi (timeout)")), ms);
+  });
+  return Promise.race([promise, timeout]).finally(()=> clearTimeout(timer));
+}
+
+async function uploadOneFileWithRetry(sid, file, onProgress, onStatus){
+  let lastErr;
+  for(let attempt = 0; attempt <= UPLOAD_MAX_RETRIES; attempt++){
+    if(attempt > 0 && onStatus) onStatus(`qayta (${attempt})`);
+    try{
+      await withTimeout(
+        uploadOneFile(sid, file, onProgress),
+        UPLOAD_TIMEOUT_MS,
+        "vaqt tugadi — tarmoq javob bermadi"
+      );
+      return;
+    }catch(err){
+      lastErr = err;
+      onProgress(0);
+    }
+  }
+  throw lastErr;
+}
+
+// Cheklangan parallellik bilan ishlovchi oddiy pool: "concurrency" ta ish
+// bir vaqtning o'zida boradi, biri tugashi bilan navbatdagisi boshlanadi.
+function runPool(items, concurrency, worker){
+  let idx = 0;
+  let active = 0;
+  return new Promise((resolve)=>{
+    function launchNext(){
+      if(idx >= items.length && active === 0){ resolve(); return; }
+      while(active < concurrency && idx < items.length){
+        const i = idx++;
+        active++;
+        Promise.resolve(worker(items[i], i)).finally(()=>{
+          active--;
+          launchNext();
+        });
+      }
+    }
+    launchNext();
+  });
+}
+
 async function listMySites(username){
   const q = query(collection(db,"sites"), where("username","==", slugify(username)));
   const snap = await getDocs(q);
@@ -532,19 +607,25 @@ function renderBoot(){
   `;
 }
 
+// Marshrutlash endi #hash orqali emas, haqiqiy pathname orqali ishlaydi —
+// shuning uchun mrhosting.uz/username/loyiha Vercel/GitHub Pages manzillari
+// kabi "toza" ko'rinadi. Bu ishlashi uchun MRhosting joylashgan hostingda
+// noma'lum har qanday path shu index.html'ga qaytarilishi (SPA fallback)
+// sozlangan bo'lishi kerak.
 function route(){
-  const hash = location.hash.replace(/^#\/?/, "");
-  if(hash){
-    const parts = hash.split("/").filter(Boolean);
+  const path = location.pathname.replace(/^\/+|\/+$/g, "");
+  if(path && path.toLowerCase() !== "index.html"){
+    const parts = path.split("/").filter(Boolean);
     if(parts.length >= 2){ renderViewer(parts[0], parts[1]); return; }
     if(parts.length === 1){ renderViewerByAlias(parts[0]); return; }
   }
+  resetTabIdentity();
   if(!authChecked){ renderBoot(); return; }
   if(!authUser){ renderAuth(); return; }
   if(!authUsername){ renderNeedUsername(); return; }
   renderDashboard();
 }
-window.addEventListener("hashchange", route);
+window.addEventListener("popstate", route);
 
 onAuthStateChanged(auth, async (user)=>{
   authUser = user;
@@ -764,7 +845,7 @@ function renderDashboard(){
             ${s.alias ? `<div class="url" style="color:var(--accent-fg);">${DOMAIN}/${s.alias}</div>` : ""}
             <div class="meta">${s.fileCount ?? "?"} ta fayl</div>
           </div>
-          <button class="btn-ghost" onclick="location.hash='#/${s.username}/${s.project}'">Ko'rish</button>
+          <button class="btn-ghost" onclick="location.href='/${s.username}/${s.project}'">Ko'rish</button>
         </div>
       `).join("");
     }catch(e){
@@ -841,21 +922,35 @@ function renderDashboard(){
     }
     const rows = filelist.querySelectorAll(".file-row");
     let done = 0;
-    for(let i=0;i<selectedFiles.length;i++){
+    let failed = 0;
+    const updateHint = ()=>{
+      document.getElementById("progressHint").textContent =
+        `${done}/${selectedFiles.length} fayl yuklandi` + (failed ? ` (${failed} xato)` : "");
+    };
+    updateHint();
+
+    // Fayllar UPLOAD_CONCURRENCY tadan parallel yuklanadi — bironta fayl
+    // sekinlashsa yoki osilib qolsa ham, qolganlar kutib turmaydi.
+    await runPool(selectedFiles, UPLOAD_CONCURRENCY, async (file, i)=>{
       const row = rows[i];
       const status = row.querySelector(".fstatus");
       const bar = row.querySelector(".bar > div");
-      status.textContent = "yuklanmoqda"; status.className = "fstatus st-up";
+      status.textContent = "navbatda"; status.className = "fstatus st-up";
       try{
-        await uploadOneFile(sid, selectedFiles[i], (pct)=>{ bar.style.width = pct+"%"; });
+        await uploadOneFileWithRetry(
+          sid, file,
+          (pct)=>{ bar.style.width = pct+"%"; },
+          (txt)=>{ status.textContent = txt; }
+        );
         status.textContent = "tayyor"; status.className = "fstatus st-done";
         done++;
       }catch(err){
         status.textContent = "xato"; status.className = "fstatus st-err";
-        showToast(`${selectedFiles[i].__relpath}: ${err.message}`, "err");
+        failed++;
+        showToast(`${file.__relpath}: ${err.message}`, "err");
       }
-      document.getElementById("progressHint").textContent = `${done}/${selectedFiles.length} fayl yuklandi`;
-    }
+      updateHint();
+    });
     if(done>0){
       await setDoc(doc(db,"sites",sid), { fileCount: done }, { merge:true });
       const msg = aliasSlug
@@ -871,35 +966,21 @@ function renderDashboard(){
   });
 }
 
-// ---------- Ommaviy ko'rish sahifasi ----------
+// ---------- Ommaviy ko'rish sahifasi (mustaqil — hech qanday MRhosting xrom yo'q) ----------
 function renderViewer(username, project){
   const sid = siteId(username, project);
-  app.innerHTML = `
-    <div class="viewer-bar">
-      <span class="lock">●</span>
-      <span class="addr">${DOMAIN}/${slugify(username)}/${slugify(project)}</span>
-      <button class="btn-ghost" onclick="location.hash=''">← Boshqaruv paneli</button>
-    </div>
-    <div id="viewerBody"></div>
-  `;
+  app.innerHTML = `<div id="viewerBody"></div>`;
   const body = document.getElementById("viewerBody");
-  body.innerHTML = `<div class="viewer-state"><div class="code">···</div><p>Sayt yuklanmoqda...</p></div>`;
-  loadAndRenderSite(sid, body, "Bu manzilda sayt topilmadi. Username va loyiha nomini tekshiring.");
+  body.innerHTML = `<div class="viewer-state"><div class="code">···</div><p>Yuklanmoqda...</p></div>`;
+  loadAndRenderSite(sid, body, "Bu manzilda sayt topilmadi.");
 }
 
 // ---------- Erkin alias orqali ko'rish sahifasi (domen.uz/xoxlagan-nom) ----------
 function renderViewerByAlias(aliasSlug){
   const clean = slugify(aliasSlug);
-  app.innerHTML = `
-    <div class="viewer-bar">
-      <span class="lock">●</span>
-      <span class="addr">${DOMAIN}/${clean}</span>
-      <button class="btn-ghost" onclick="location.hash=''">← Boshqaruv paneli</button>
-    </div>
-    <div id="viewerBody"></div>
-  `;
+  app.innerHTML = `<div id="viewerBody"></div>`;
   const body = document.getElementById("viewerBody");
-  body.innerHTML = `<div class="viewer-state"><div class="code">···</div><p>Sayt yuklanmoqda...</p></div>`;
+  body.innerHTML = `<div class="viewer-state"><div class="code">···</div><p>Yuklanmoqda...</p></div>`;
 
   getAliasDoc(clean).then(a=>{
     if(!a){
@@ -912,7 +993,7 @@ function renderViewerByAlias(aliasSlug){
   });
 }
 
-// Ikkalasi (username/project va alias) uchun umumiy: fayllar ro'yxatini o'qib, iframe'ga chizadi
+// Ikkalasi (username/project va alias) uchun umumiy: fayllar ro'yxatini o'qib, to'liq ekranga chizadi
 function loadAndRenderSite(sid, body, notFoundMsg){
   loadSiteFiles(sid).then(async files=>{
     if(!Object.keys(files).length){
@@ -930,6 +1011,7 @@ function loadAndRenderSite(sid, body, notFoundMsg){
       body.innerHTML = `<div class="viewer-state"><div class="code">?</div><p>index.html topilmadi. Loyiha to'liq yuklanmagan bo'lishi mumkin.</p></div>`;
       return;
     }
+    applyTabIdentity(html, files);
     body.innerHTML = `<iframe id="siteframe" sandbox="allow-scripts allow-forms allow-popups allow-modals"></iframe>`;
     document.getElementById("siteframe").srcdoc = html;
   }).catch(err=>{
@@ -937,7 +1019,7 @@ function loadAndRenderSite(sid, body, notFoundMsg){
   });
 }
 
-// boshlang'ich holat: agar hash orqali sayt ko'rish bo'lsa, auth kutmasdan darhol ko'rsatamiz
+// boshlang'ich holat: agar path orqali sayt ko'rish bo'lsa, auth kutmasdan darhol ko'rsatamiz
 route();
 </script>
 </body>
