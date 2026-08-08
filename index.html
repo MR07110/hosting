@@ -384,13 +384,13 @@ function showToast(msg, type=""){
 }
 function guessType(name){
   const ext = name.split(".").pop().toLowerCase();
-  const map = {html:"text",htm:"text",css:"text",js:"text",json:"text",svg:"text",txt:"text",md:"text"};
+  const map = {html:"text",htm:"text",css:"text",js:"text",mjs:"text",cjs:"text",json:"text",svg:"text",txt:"text",md:"text"};
   return map[ext] || "binary";
 }
 function mimeOf(name){
   const ext = name.split(".").pop().toLowerCase();
   const map = {
-    html:"text/html", htm:"text/html", css:"text/css", js:"application/javascript",
+    html:"text/html", htm:"text/html", css:"text/css", js:"text/javascript", mjs:"text/javascript", cjs:"text/javascript",
     json:"application/json", svg:"image/svg+xml", png:"image/png", jpg:"image/jpeg",
     jpeg:"image/jpeg", gif:"image/gif", webp:"image/webp", ico:"image/x-icon",
     woff:"font/woff", woff2:"font/woff2", txt:"text/plain", md:"text/markdown"
@@ -417,10 +417,29 @@ function applyTabIdentity(html, files){
   const title = m ? m[1].replace(/<[^>]*>/g,"").trim() : "";
   document.title = title || DEFAULT_TITLE;
 
-  const favKey = Object.keys(files).find(p => /(^|\/)favicon\.(ico|png|svg)$/i.test(p));
+  // 1) Avval saytning o'z <link rel="icon"/"shortcut icon"/"apple-touch-icon">
+  //    teglaridan qidiramiz — bu paytda html ichidagi href allaqachon
+  //    (renderSiteHtml orqali) haqiqiy public URL'ga almashtirilgan bo'ladi,
+  //    shuning uchun fayl nomi "favicon" bo'lishi shart emas.
+  let faviconUrl = null;
+  const linkTags = html.match(/<link[^>]+>/gi) || [];
+  for(const tag of linkTags){
+    if(/rel=["'](?:shortcut icon|icon|apple-touch-icon(?:-precomposed)?)["']/i.test(tag)){
+      const hrefMatch = tag.match(/href=["']([^"']+)["']/i);
+      if(hrefMatch){ faviconUrl = hrefMatch[1]; break; }
+    }
+  }
+
+  // 2) Topilmasa, fayllar orasidan nomi "favicon" bilan boshlanadigan
+  //    (kengroq kengaytmalar bilan) faylni qidiramiz.
+  if(!faviconUrl){
+    const favKey = Object.keys(files).find(p => /(^|\/)favicon\.(ico|png|svg|jpg|jpeg|gif|webp)$/i.test(p));
+    if(favKey) faviconUrl = files[favKey].url;
+  }
+
   let link = document.querySelector('link[rel="icon"]');
   if(!link){ link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
-  link.href = favKey ? files[favKey].url : DEFAULT_FAVICON;
+  link.href = faviconUrl || DEFAULT_FAVICON;
 }
 function resetTabIdentity(){
   document.title = DEFAULT_TITLE;
@@ -925,11 +944,11 @@ function renderDashboard(){
         <div class="site-card">
           <div>
             <div class="name">${s.project}<span class="badge">Public</span></div>
-            <a class="url" href="/${s.username}/${s.project}">${DOMAIN}/${s.username}/${s.project}</a>
-            ${s.alias ? `<a class="url" style="color:var(--accent-fg);" href="/${s.alias}">${DOMAIN}/${s.alias}</a>` : ""}
+            <a class="url" href="/${s.username}/${s.project}" target="_blank" rel="noopener">${DOMAIN}/${s.username}/${s.project}</a>
+            ${s.alias ? `<a class="url" style="color:var(--accent-fg);" href="/${s.alias}" target="_blank" rel="noopener">${DOMAIN}/${s.alias}</a>` : ""}
             <div class="meta">${s.fileCount ?? "?"} ta fayl</div>
           </div>
-          <a class="btn-ghost" href="/${s.username}/${s.project}">Ko'rish</a>
+          <a class="btn-ghost" href="/${s.username}/${s.project}" target="_blank" rel="noopener">Ko'rish</a>
         </div>
       `).join("");
     }catch(e){
@@ -1035,6 +1054,7 @@ function renderDashboard(){
         done++;
       }catch(err){
         status.textContent = "xato"; status.className = "fstatus st-err";
+        status.title = err.message;
         failed++;
         showToast(`${file.__relpath}: ${err.message}`, "err");
       }
