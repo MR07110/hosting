@@ -539,15 +539,29 @@ async function getAliasDoc(aliasRaw){
 }
 
 // ---------- Supabase Storage'ga faylni yuklash, Firestore'ga faqat metama'lumot yozish ----------
+// Ba'zi Supabase bucket'lari faqat cheklangan ro'yxatdagi MIME turlarigagina
+// ruxsat beradi ("mime type ... is not supported" xatosi shundan). Bunday
+// holatda faylni butunlay rad etish o'rniga, ketma-ket boshqa (kengroq
+// qabul qilinadigan) content-type bilan qayta urinib ko'ramiz.
+const MIME_FALLBACK_CHAIN = ["text/plain", "application/octet-stream"];
+
 async function uploadOneFile(sid, file, onProgress){
   const relpath = (file.__relpath || file.name).replace(/^\/+/, "");
-  const mime = mimeOf(relpath);
+  let mime = mimeOf(relpath);
   const storagePath = `${sid}/${relpath}`;
 
   onProgress(15);
-  const { error: upErr } = await supabase.storage
-    .from(SUPABASE_BUCKET)
-    .upload(storagePath, file, { upsert: true, contentType: mime, cacheControl: "3600" });
+  let candidates = [mime, ...MIME_FALLBACK_CHAIN.filter(c => c !== mime)];
+  let upErr = null;
+  for(const ct of candidates){
+    const res = await supabase.storage
+      .from(SUPABASE_BUCKET)
+      .upload(storagePath, file, { upsert: true, contentType: ct, cacheControl: "3600" });
+    upErr = res.error;
+    if(!upErr){ mime = ct; break; }
+    const isMimeRejected = /mime type/i.test(upErr.message) && /not support/i.test(upErr.message);
+    if(!isMimeRejected) break; // boshqa turdagi xato bo'lsa (tarmoq, ruxsat va h.k.), qayta urinmaymiz
+  }
   if(upErr) throw new Error(upErr.message);
   onProgress(75);
 
