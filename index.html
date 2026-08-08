@@ -80,7 +80,8 @@
     background:var(--canvas-default); border:1px solid var(--border-default); border-radius:6px;
     padding:16px; margin-bottom:16px; box-shadow:var(--shadow-sm);
   }
-  .panel h2{font-size:14px; color:var(--fg-default); margin:0 0 14px; font-weight:600; padding-bottom:10px; border-bottom:1px solid var(--border-muted);}
+  .panel h2{font-size:14px; color:var(--fg-default); margin:0 0 14px; font-weight:600; padding-bottom:10px; border-bottom:1px solid var(--border-muted); display:flex; align-items:center; gap:8px;}
+  .panel h2 svg{flex-shrink:0; color:var(--accent-fg);}
 
   .row{display:flex; gap:14px; flex-wrap:wrap;}
   .field{flex:1; min-width:180px; display:flex; flex-direction:column; gap:6px;}
@@ -104,7 +105,7 @@
     text-align:center; cursor:default; transition:.12s; position:relative; overflow:hidden;
   }
   .dropzone.drag{border-color:var(--accent-fg); background:var(--accent-subtle);}
-  .dropzone .icon{font-size:26px; margin-bottom:10px; color:var(--fg-subtle);}
+  .dropzone .icon{margin-bottom:10px; color:var(--fg-subtle); display:flex; justify-content:center;}
   .dropzone .main-txt{font-weight:600; margin-bottom:4px; color:var(--fg-default); font-size:14px;}
   .dropzone .sub-txt{color:var(--fg-muted); font-size:12.5px; margin-bottom:16px;}
   .dropzone .pick-actions{display:flex; gap:8px; justify-content:center; flex-wrap:wrap;}
@@ -118,8 +119,8 @@
   }
   .file-row:last-child{border-bottom:none;}
   .file-row:hover{background:var(--canvas-subtle);}
-  .file-row .fname{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--mono); color:var(--fg-default);}
-  .file-row .fname::before{content:'📄'; margin-right:8px; font-size:12px;}
+  .file-row .fname{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--mono); color:var(--fg-default); display:flex; align-items:center; gap:8px;}
+  .file-row .fname::before{content:''; flex-shrink:0; width:13px; height:13px; background-color:var(--fg-subtle); -webkit-mask:var(--icon-file) center/contain no-repeat; mask:var(--icon-file) center/contain no-repeat;}
   .file-row .fsize{color:var(--fg-muted); font-size:12px; font-family:var(--mono);}
   .file-row .fstatus{font-size:12px; min-width:84px; text-align:right; font-weight:600;}
   .file-row .bar{height:4px; background:var(--border-muted); border-radius:2px; overflow:hidden; width:60px;}
@@ -139,6 +140,8 @@
   .btn-primary:hover{background:var(--btn-primary-hover);}
   .btn-primary:disabled{background:#94d3a2; border-color:transparent; cursor:not-allowed;}
   .btn-ghost{background:var(--btn-bg); color:var(--fg-default); border:1px solid var(--btn-border);}
+  a.btn-ghost, a.btn-primary{display:inline-flex; align-items:center; justify-content:center; text-decoration:none;}
+  a.btn-ghost:hover, a.btn-primary:hover{text-decoration:none;}
   .btn-block{width:100%; padding:7px 16px;}
   .actions{display:flex; gap:8px; margin-top:16px; align-items:center; flex-wrap:wrap;}
   .hint{font-size:12px; color:var(--fg-muted);}
@@ -152,9 +155,10 @@
   .site-card > div{min-width:0; flex:1;}
   .site-card:last-child{border-bottom:none;}
   .site-card .name{font-weight:600; font-size:15px; color:var(--accent-fg); display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
-  .site-card .name::before{content:'📁'; font-size:13px;}
+  .site-card .name::before{content:''; flex-shrink:0; width:14px; height:14px; background-color:var(--accent-fg); -webkit-mask:var(--icon-folder) center/contain no-repeat; mask:var(--icon-folder) center/contain no-repeat;}
   .site-card .name .badge{font-size:11px; font-weight:500; color:var(--fg-muted); border:1px solid var(--border-default); border-radius:999px; padding:1px 8px; margin-left:2px;}
-  .site-card .url{font-family:var(--mono); font-size:12.5px; color:var(--fg-muted); margin-top:5px; word-break:break-all;}
+  .site-card .url{font-family:var(--mono); font-size:12.5px; color:var(--fg-muted); margin-top:5px; word-break:break-all; display:block;}
+  .site-card a.url:hover{color:var(--accent-fg); text-decoration:underline;}
   .site-card .meta{font-size:12px; color:var(--fg-subtle); margin-top:6px; display:flex; align-items:center; gap:6px;}
   .site-card .meta::before{content:'●'; font-size:8px; color:var(--success-emphasis);}
   .empty{color:var(--fg-muted); font-size:13px; text-align:center; padding:24px 0;}
@@ -188,43 +192,36 @@
   .viewer-state .code{font-family:var(--mono); font-size:52px; color:var(--fg-muted); font-weight:700;}
   .viewer-state p{color:var(--fg-muted); max-width:400px; font-size:14px;}
 
-  /* ---- Jonli/kulgili real-progress loading ekrani (matn jiddiy, animatsiya funny) ---- */
+  /* ---- Yuklash ekrani: bitta rangga moslashtirilgan, sokin animatsiya ---- */
   .load-dots{display:flex; gap:9px; height:26px; align-items:flex-end;}
   .load-dots span{
     width:14px; height:14px; border-radius:50%;
     background:var(--accent-fg);
     animation:load-hop 0.9s ease-in-out infinite;
   }
-  .load-dots span:nth-child(1){animation-delay:0s; background:#3fb950;}
-  .load-dots span:nth-child(2){animation-delay:.15s; background:#58a6ff;}
-  .load-dots span:nth-child(3){animation-delay:.3s; background:#d29922;}
-  .load-dots span:nth-child(4){animation-delay:.45s; background:#f778ba;}
+  .load-dots span:nth-child(1){animation-delay:0s; opacity:1;}
+  .load-dots span:nth-child(2){animation-delay:.15s; opacity:.85;}
+  .load-dots span:nth-child(3){animation-delay:.3s; opacity:.7;}
+  .load-dots span:nth-child(4){animation-delay:.45s; opacity:.55;}
   @keyframes load-hop{
     0%, 60%, 100%{transform:translateY(0) scaleX(1) scaleY(1);}
-    30%{transform:translateY(-20px) scaleX(0.85) scaleY(1.15);}
-    52%{transform:translateY(0) scaleX(1.3) scaleY(0.7);}
+    30%{transform:translateY(-16px) scaleX(0.9) scaleY(1.1);}
+    52%{transform:translateY(0) scaleX(1.15) scaleY(0.85);}
   }
   .load-pct{
     font-family:var(--mono); font-size:44px; font-weight:800; color:var(--accent-fg); letter-spacing:-.02em;
     display:inline-block; transition:transform .18s cubic-bezier(.34,1.6,.64,1);
   }
-  .load-pct.pop{transform:scale(1.28) rotate(-3deg);}
+  .load-pct.pop{transform:scale(1.12);}
   .load-bar-track{
-    width:260px; max-width:80vw; height:14px; border-radius:999px; background:var(--border-muted);
+    width:260px; max-width:80vw; height:10px; border-radius:999px; background:var(--border-muted);
     overflow:hidden; position:relative; box-shadow:inset 0 0 0 1px var(--border-default);
   }
   .load-bar-fill{
-    height:100%; width:0%; border-radius:999px 40% 40% 999px / 999px 60% 60% 999px;
-    background:linear-gradient(90deg, #3fb950, #58a6ff, #d29922, #f778ba, #3fb950);
-    background-size:300% 100%;
-    animation:load-hue 1.6s linear infinite, load-squish 0.5s ease-in-out infinite;
-    transition:width .3s cubic-bezier(.34,1.56,.64,1);
+    height:100%; width:0%; border-radius:999px;
+    background:var(--accent-fg);
+    transition:width .3s cubic-bezier(.34,1.2,.64,1);
     transform-origin:left center;
-  }
-  @keyframes load-hue{ 0%{background-position:0% 0;} 100%{background-position:-300% 0;} }
-  @keyframes load-squish{
-    0%,100%{transform:scaleY(1);}
-    50%{transform:scaleY(1.35);}
   }
   .load-msg{color:var(--fg-default); font-size:14.5px; font-weight:600;}
   .load-fname{color:var(--fg-subtle); font-size:11.5px; font-family:var(--mono); max-width:70vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
@@ -265,7 +262,7 @@
     .actions button{width:100%;}
     .hint{text-align:center;}
     .site-card{flex-direction:column; align-items:flex-start; gap:10px;}
-    .site-card button{width:100%;}
+    .site-card button, .site-card a.btn-ghost{width:100%;}
     .url-preview{font-size:11.5px;}
     .auth-wrap{padding:28px 16px;}
     .auth-logo{font-size:18px;}
@@ -327,6 +324,17 @@ const LOGO_SVG = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" wi
   <circle cx="22" cy="46.3" r="1.7" fill="#3fb950"/>
   <rect x="33" y="45.3" width="10.5" height="2" rx="1" fill="#3fb950"/>
 </svg>`;
+
+// ---------- Ikonkalar (barchasi SVG, emojisiz) ----------
+const ICON_BOX = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>`;
+const ICON_UPLOAD = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+const ICON_UPLOAD_LG = `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+const ICON_FOLDER = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>`;
+// mask uchun data-URI ikonkalar (fayl/papka — bitta rangga bo'yaladi)
+const ICON_FILE_URI = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3C/svg%3E\")";
+const ICON_FOLDER_URI = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z'/%3E%3C/svg%3E\")";
+document.documentElement.style.setProperty("--icon-file", ICON_FILE_URI);
+document.documentElement.style.setProperty("--icon-folder", ICON_FOLDER_URI);
 
 // MRhosting o'zining boshlang'ich tab-nomi/ikonkasi — mustaqil sayt ko'rsatilgach,
 // dashboardga qaytilganda shu qiymatlarga tiklanadi.
@@ -799,7 +807,7 @@ function renderDashboard(){
       </div>
 
       <div class="panel">
-        <h2>📦 Loyiha nomi</h2>
+        <h2>${ICON_BOX} Loyiha nomi</h2>
         <div class="field">
           <label>Manzil</label>
           <div class="prefix-input"><span>${DOMAIN}/${authUsername}/</span><input type="text" id="project" placeholder="portfolio" autocomplete="off"></div>
@@ -819,9 +827,9 @@ function renderDashboard(){
       </div>
 
       <div class="panel">
-        <h2>⬆️ Fayllar</h2>
+        <h2>${ICON_UPLOAD} Fayllar</h2>
         <div class="dropzone" id="dropzone">
-          <div class="icon">⇪</div>
+          <div class="icon">${ICON_UPLOAD_LG}</div>
           <div class="main-txt">Fayl yoki papkani shu yerga tashlang</div>
           <div class="sub-txt">index.html bo'lishi shart</div>
           <div class="pick-actions">
@@ -840,7 +848,7 @@ function renderDashboard(){
       </div>
 
       <div class="panel">
-        <h2>📁 Mening loyihalarim</h2>
+        <h2>${ICON_FOLDER} Mening loyihalarim</h2>
         <div class="sites" id="sitesList"><div class="empty">Yuklanmoqda...</div></div>
       </div>
     </main>
@@ -895,11 +903,11 @@ function renderDashboard(){
         <div class="site-card">
           <div>
             <div class="name">${s.project}<span class="badge">Public</span></div>
-            <div class="url">${DOMAIN}/${s.username}/${s.project}</div>
-            ${s.alias ? `<div class="url" style="color:var(--accent-fg);">${DOMAIN}/${s.alias}</div>` : ""}
+            <a class="url" href="/${s.username}/${s.project}">${DOMAIN}/${s.username}/${s.project}</a>
+            ${s.alias ? `<a class="url" style="color:var(--accent-fg);" href="/${s.alias}">${DOMAIN}/${s.alias}</a>` : ""}
             <div class="meta">${s.fileCount ?? "?"} ta fayl</div>
           </div>
-          <button class="btn-ghost" onclick="location.href='/${s.username}/${s.project}'">Ko'rish</button>
+          <a class="btn-ghost" href="/${s.username}/${s.project}">Ko'rish</a>
         </div>
       `).join("");
     }catch(e){
@@ -1051,9 +1059,7 @@ function renderViewerByAlias(aliasSlug){
   });
 }
 
-// ---- Yuklash ekrani: real progress-foiz + jonli (funny) CSS-animatsiya ----
-// Matn jiddiy va statik — "funny" bo'lgani faqat vizual: sakragan nuqtalar,
-// "jele" kabi cho'ziladigan progress-bar, foiz raqami har yangilanishda "pop" qiladi.
+// ---- Yuklash ekrani: real progress-foiz, bitta rangga moslashtirilgan sokin animatsiya ----
 function renderLoadingUI(body, total){
   body.innerHTML = `
     <div class="viewer-state">
@@ -1079,7 +1085,7 @@ function updateLoadingProgress(loaded, total, currentFile){
   }
   if(barEl) barEl.style.width = pct + "%";
   if(fnameEl) fnameEl.textContent = `${loaded} / ${total} fayl — ${currentFile || ""}`;
-  document.title = `⏳ ${pct}% — yuklanmoqda`;
+  document.title = `${pct}% — yuklanmoqda`;
 }
 
 // Ikkalasi (username/project va alias) uchun umumiy: fayllar ro'yxatini o'qib,
