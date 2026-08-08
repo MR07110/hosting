@@ -188,6 +188,16 @@
   .viewer-state .code{font-family:var(--mono); font-size:52px; color:var(--fg-muted); font-weight:700;}
   .viewer-state p{color:var(--fg-muted); max-width:400px; font-size:14px;}
 
+  /* Mustaqil sayt ko'rsatilganda orqadagi MRhosting sahifasi butunlay
+     skrollanmasin — aks holda fixed iframe joyida qolib, orqa fon
+     "suzib" siljigandek ko'rinadi (overlay effekti). Saytning o'z ichki
+     skrolli iframe ICHIDA, mustaqil ravishda ishlayveradi. */
+  html.no-scroll, body.no-scroll{
+    overflow:hidden !important;
+    height:100% !important;
+    overscroll-behavior:none;
+  }
+
   @media (max-width: 640px){
     header{padding:0 14px; height:56px;}
     .logo{font-size:14px;}
@@ -620,6 +630,8 @@ function route(){
     if(parts.length === 1){ renderViewerByAlias(parts[0]); return; }
   }
   resetTabIdentity();
+  document.documentElement.classList.remove("no-scroll");
+  document.body.classList.remove("no-scroll");
   if(!authChecked){ renderBoot(); return; }
   if(!authUser){ renderAuth(); return; }
   if(!authUsername){ renderNeedUsername(); return; }
@@ -968,6 +980,8 @@ function renderDashboard(){
 
 // ---------- Ommaviy ko'rish sahifasi (mustaqil — hech qanday MRhosting xrom yo'q) ----------
 function renderViewer(username, project){
+  document.documentElement.classList.add("no-scroll");
+  document.body.classList.add("no-scroll");
   const sid = siteId(username, project);
   app.innerHTML = `<div id="viewerBody"></div>`;
   const body = document.getElementById("viewerBody");
@@ -977,6 +991,8 @@ function renderViewer(username, project){
 
 // ---------- Erkin alias orqali ko'rish sahifasi (domen.uz/xoxlagan-nom) ----------
 function renderViewerByAlias(aliasSlug){
+  document.documentElement.classList.add("no-scroll");
+  document.body.classList.add("no-scroll");
   const clean = slugify(aliasSlug);
   app.innerHTML = `<div id="viewerBody"></div>`;
   const body = document.getElementById("viewerBody");
