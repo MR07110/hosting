@@ -1027,7 +1027,7 @@ function renderViewer(username, project){
   const sid = siteId(username, project);
   app.innerHTML = `<div id="viewerBody"></div>`;
   const body = document.getElementById("viewerBody");
-  body.innerHTML = `<div class="viewer-state"><div class="code">···</div><p>Yuklanmoqda...</p></div>`;
+  renderLoadingUI(body, 0);
   loadAndRenderSite(sid, body, "Bu manzilda sayt topilmadi.");
 }
 
@@ -1038,7 +1038,7 @@ function renderViewerByAlias(aliasSlug){
   const clean = slugify(aliasSlug);
   app.innerHTML = `<div id="viewerBody"></div>`;
   const body = document.getElementById("viewerBody");
-  body.innerHTML = `<div class="viewer-state"><div class="code">···</div><p>Yuklanmoqda...</p></div>`;
+  renderLoadingUI(body, 0);
 
   getAliasDoc(clean).then(a=>{
     if(!a){
